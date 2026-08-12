@@ -1,4 +1,3 @@
-````typescript
 import { GoogleGenAI } from "@google/genai";
 import "@supabase/functions-js/edge-runtime.d.ts";
 
@@ -29,9 +28,17 @@ Deno.serve(async (req: Request) => {
   try {
     const body = await req.json();
 
-    const image = body.image;
+    // 1. Get the raw image string from the frontend
+    const rawImage = body.image;
+    let cleanImage = rawImage;
 
-    if (!image) {
+    // 2. Check if the string includes the comma used in Data URIs
+    if (rawImage && rawImage.includes("base64,")) {
+      // Split the string at the comma and keep the second part (the raw data)
+      cleanImage = rawImage.split("base64,")[1];
+    }
+
+    if (!cleanImage) {
       return new Response(
         JSON.stringify({
           success: false,
@@ -56,7 +63,7 @@ Deno.serve(async (req: Request) => {
         {
           inlineData: {
             mimeType: "image/jpeg",
-            data: image,
+            data: cleanImage,
           },
         },
         {
@@ -168,4 +175,3 @@ The confidence value must be a number from 0 to 1.
     );
   }
 });
-````
