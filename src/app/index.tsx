@@ -1,19 +1,18 @@
-import { SafeAreaView, StyleSheet } from "react-native";
-
-// Imports your component from src/components/ImageAnalyzer.tsx
+import { StatusBar, StyleSheet, View } from "react-native";
 import ImageAnalyzer from "../components/ImageAnalyzer";
 
 export default function HomeScreen() {
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#090A0F" />
       <ImageAnalyzer />
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: "#090A0F", // Deep SpaceX void black
   },
 });

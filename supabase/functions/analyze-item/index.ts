@@ -82,6 +82,7 @@ Your job is to determine as accurately as possible:
 - visible text
 - accessories
 - identifying characteristics
+- price range and value (required)
 
 Pay special attention to:
 
@@ -115,7 +116,13 @@ Use exactly this structure:
   "visibleText": [],
   "accessories": [],
   "identifyingDetails": [],
-  "confidence": 0
+  "confidence": 0,
+  "estimatedValue": {
+    "min": ,
+    "max": ,
+    "average": ,
+    "currency": ""
+  },
 }
 
 The confidence value must be a number from 0 to 1.
