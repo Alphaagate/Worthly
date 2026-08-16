@@ -1,11 +1,12 @@
 import { StatusBar, StyleSheet, View } from "react-native";
-import ImageAnalyzer from "../components/ImageAnalyzer";
+import BuyerAnalyzer from "../components/BuyerAnalyzer";
 
-export default function HomeScreen() {
+export default function BuyScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#090A0F" />
-      <ImageAnalyzer />
+
+      <BuyerAnalyzer />
     </View>
   );
 }
@@ -13,6 +14,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#090A0F", // Deep SpaceX void black
+    backgroundColor: "#090A0F",
   },
 });

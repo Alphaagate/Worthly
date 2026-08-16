@@ -6,9 +6,13 @@ import {
   Alert,
   Dimensions,
   Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -59,19 +63,21 @@ interface Listing {
 export default function ImageAnalyzer() {
   const [imageUri, setImageUri] = useState<string | null>(null);
 
-  // AI item analysis loading state
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(false);
+  const [generatingListing, setGeneratingListing] = useState(false);
 
-  // Marketplace listing generation loading state
-  const [generatingListing, setGeneratingListing] = useState<boolean>(false);
-
-  // AI analysis result
   const [result, setResult] = useState<AnalysisResult | null>(null);
-
-  // Generated marketplace listing
   const [listing, setListing] = useState<Listing | null>(null);
 
-  // Scanner animation
+  // EDIT LISTING
+  const [editingListing, setEditingListing] = useState(false);
+
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editPrice, setEditPrice] = useState("");
+  const [editCondition, setEditCondition] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+
   const scanLinePos = useSharedValue(0);
 
   useEffect(() => {
@@ -102,8 +108,8 @@ export default function ImageAnalyzer() {
 
     if (status !== "granted") {
       Alert.alert(
-        "Permission Required",
-        "Please allow camera access to scan items.",
+        "Camera Access Needed",
+        "Please allow camera access so Worthly can scan your item.",
       );
       return;
     }
@@ -133,7 +139,10 @@ export default function ImageAnalyzer() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (status !== "granted") {
-      Alert.alert("Permission Required", "Please allow gallery access.");
+      Alert.alert(
+        "Photo Access Needed",
+        "Please allow photo access so Worthly can analyze an item.",
+      );
       return;
     }
 
@@ -155,22 +164,18 @@ export default function ImageAnalyzer() {
   };
 
   // --------------------------------------------------
-  // ANALYZE IMAGE
+  // ANALYZE
   // --------------------------------------------------
 
   const analyzeImage = async (base64Data: string) => {
     setLoading(true);
 
-    // Clear previous results
     setResult(null);
     setListing(null);
     setGeneratingListing(false);
 
     try {
-      // ==============================================
-      // STEP 1
-      // Analyze the image
-      // ==============================================
+      // STEP 1 — ANALYZE ITEM
 
       const { data, error } = await supabase.functions.invoke("analyze-item", {
         body: {
@@ -188,18 +193,12 @@ export default function ImageAnalyzer() {
 
       const analysis: AnalysisResult = data.result;
 
-      console.log("================================");
-      console.log("AI ANALYSIS RESULT:");
+      console.log("AI ANALYSIS:");
       console.log(JSON.stringify(analysis, null, 2));
-      console.log("================================");
 
-      // Display analysis immediately
       setResult(analysis);
 
-      // ==============================================
-      // STEP 2
-      // Generate marketplace listing
-      // ==============================================
+      // STEP 2 — GENERATE LISTING
 
       setGeneratingListing(true);
 
@@ -207,24 +206,14 @@ export default function ImageAnalyzer() {
         const { data: listingData, error: listingError } =
           await supabase.functions.invoke("generate-listing", {
             body: {
-              // IMPORTANT:
-              // Never send undefined for itemName.
               itemName: analysis.name || "Unknown item",
-
               brand: analysis.brand || "Unknown",
-
               model: analysis.model || "Unknown",
-
               description: analysis.conditionDescription || "",
-
               conditionDescription: analysis.conditionDescription || "",
-
               estimatedValue: analysis.estimatedValue || null,
-
               visibleText: analysis.visibleText || [],
-
               accessories: analysis.accessories || [],
-
               identifyingDetails: analysis.identifyingDetails || [],
             },
           });
@@ -234,37 +223,28 @@ export default function ImageAnalyzer() {
         }
 
         if (!listingData || !listingData.success || !listingData.listing) {
-          console.error("Invalid listing response:", listingData);
-
           throw new Error("The listing generator returned no listing.");
         }
 
-        console.log("================================");
-        console.log("GENERATED LISTING:");
-        console.log(JSON.stringify(listingData.listing, null, 2));
-        console.log("================================");
-
-        // Display generated listing
         setListing(listingData.listing);
       } catch (listingError: any) {
-        console.error("================================");
         console.error("LISTING GENERATION FAILED:", listingError);
-        console.error("================================");
 
         Alert.alert(
-          "Listing Generation Failed",
+          "Listing Couldn't Be Created",
           listingError?.message ||
-            "The item was analyzed successfully, but the marketplace listing could not be generated.",
+            "Worthly analyzed your item, but couldn't create the listing.",
         );
       } finally {
         setGeneratingListing(false);
       }
     } catch (err: any) {
-      console.error("Image analysis failed:", err);
+      console.error("IMAGE ANALYSIS FAILED:", err);
 
       Alert.alert(
         "Scan Failed",
-        err?.message || "An unexpected error occurred.",
+        err?.message ||
+          "Worthly couldn't analyze this image. Please try another photo.",
       );
     } finally {
       setLoading(false);
@@ -272,408 +252,628 @@ export default function ImageAnalyzer() {
   };
 
   // --------------------------------------------------
+  // EDIT LISTING
+  // --------------------------------------------------
+
+  const openEditListing = () => {
+    if (!listing) return;
+
+    setEditTitle(listing.title);
+    setEditDescription(listing.description);
+    setEditPrice(String(listing.suggestedPrice));
+    setEditCondition(listing.condition);
+    setEditCategory(listing.category);
+
+    setEditingListing(true);
+  };
+
+  const saveEditedListing = () => {
+    if (!listing) return;
+
+    const cleanedPrice = Number(editPrice.replace(/[^0-9.]/g, ""));
+
+    if (!editTitle.trim()) {
+      Alert.alert("Missing Title", "Please enter a listing title.");
+      return;
+    }
+
+    if (!editPrice || Number.isNaN(cleanedPrice) || cleanedPrice <= 0) {
+      Alert.alert("Invalid Price", "Please enter a valid asking price.");
+      return;
+    }
+
+    setListing({
+      ...listing,
+      title: editTitle.trim(),
+      description: editDescription.trim(),
+      suggestedPrice: cleanedPrice,
+      condition: editCondition.trim(),
+      category: editCategory.trim(),
+    });
+
+    setEditingListing(false);
+  };
+
+  // --------------------------------------------------
+  // SELL
+  // --------------------------------------------------
+
+  const handleSell = () => {
+    Alert.alert("Ready to Sell", "Marketplace connections will be added here.");
+  };
+
+  // --------------------------------------------------
   // UI
   // --------------------------------------------------
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* HEADER */}
-
-      <Animated.View entering={FadeInDown.duration(800)} style={styles.header}>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>VISION OS</Text>
-        </View>
-
-        <Text style={styles.headerTitle}>WORTHLY</Text>
-
-        <Text style={styles.headerSubtitle}>
-          Market intelligence, distilled.
-        </Text>
-      </Animated.View>
-
-      {/* IMAGE / VIEWFINDER */}
-
-      <Animated.View
-        entering={FadeInUp.duration(800)}
-        style={styles.imageContainer}
+    <>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
       >
-        {imageUri ? (
-          <View style={styles.imageWrapper}>
-            <Image source={{ uri: imageUri }} style={styles.previewImage} />
+        {/* HEADER */}
 
-            {loading && (
-              <Animated.View style={[styles.scanLine, animatedScanStyle]} />
-            )}
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={styles.placeholderBox}
-            onPress={openCamera}
-            activeOpacity={0.9}
-          >
-            <Ionicons name="scan-outline" size={48} color="#FFFFFF" />
-
-            <Text style={styles.placeholderText}>ACTIVATE SENSOR</Text>
-
-            <Text style={styles.placeholderSub}>
-              Tap to open the camera module
-            </Text>
-          </TouchableOpacity>
-        )}
-      </Animated.View>
-
-      {/* CAMERA BUTTON */}
-
-      <TouchableOpacity
-        style={styles.primaryBtn}
-        onPress={openCamera}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="camera" size={20} color="#000000" />
-
-        <Text style={styles.btnTextBlack}>OPEN CAMERA</Text>
-      </TouchableOpacity>
-
-      {/* GALLERY BUTTON */}
-
-      <TouchableOpacity style={styles.galleryLink} onPress={openGallery}>
-        <Text style={styles.galleryLinkText}>Select from Camera Roll</Text>
-      </TouchableOpacity>
-
-      {/* ANALYSIS LOADING */}
-
-      {loading && (
-        <View style={styles.loadingCard}>
-          <ActivityIndicator size="small" color="#FFFFFF" />
-
-          <Text style={styles.loadingText}>Processing telemetry...</Text>
-        </View>
-      )}
-
-      {/* ANALYSIS RESULTS */}
-
-      {/* IMPORTANT:
-          This is intentionally just `result`,
-          NOT `result && !loading`.
-          The analysis can display while the
-          marketplace listing is being generated.
-      */}
-
-      {result && (
         <Animated.View
-          entering={FadeInUp.duration(600)}
-          style={styles.resultsContainer}
+          entering={FadeInDown.duration(500)}
+          style={styles.header}
         >
-          {/* ESTIMATED VALUE */}
+          <View style={styles.modeBadge}>
+            <View style={styles.modeDot} />
+            <Text style={styles.modeText}>SELLER MODE</Text>
+          </View>
 
-          {result.estimatedValue && (
-            <View style={styles.priceCard}>
-              <Text style={styles.priceLabel}>ESTIMATED MARKET VALUE</Text>
+          <Text style={styles.headerTitle}>Worthly</Text>
 
-              <Text style={styles.priceMain}>
-                ${result.estimatedValue.average}
-                <Text style={styles.currency}>
-                  {" "}
-                  {result.estimatedValue.currency}
-                </Text>
-              </Text>
+          <Text style={styles.headerSubtitle}>
+            Turn things you own into money.
+          </Text>
+        </Animated.View>
 
-              <Text style={styles.priceRange}>
-                Range: ${result.estimatedValue.min} – $
-                {result.estimatedValue.max}
-              </Text>
-            </View>
-          )}
+        {/* IMAGE */}
 
-          {/* ITEM DETAILS */}
+        <Animated.View
+          entering={FadeInUp.duration(500)}
+          style={styles.imageContainer}
+        >
+          {imageUri ? (
+            <View style={styles.imageWrapper}>
+              <Image source={{ uri: imageUri }} style={styles.previewImage} />
 
-          <View style={styles.detailsCard}>
-            <Text style={styles.sectionTitle}>ASSET DETAILS</Text>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Identity</Text>
-
-              <Text style={styles.detailValue}>{result.name || "Unknown"}</Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Manufacturer</Text>
-
-              <Text style={styles.detailValue}>
-                {result.brand || "Unknown"}
-              </Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Model Series</Text>
-
-              <Text style={styles.detailValue}>
-                {result.model || "Unknown"}
-              </Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Category</Text>
-
-              <Text style={styles.detailValue}>
-                {result.category || "Unknown"}
-              </Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Visual Condition</Text>
-
-              <Text style={styles.detailValueHighlight}>
-                {result.condition || "Unknown"}
-              </Text>
-            </View>
-
-            {result.confidence !== undefined && (
-              <>
-                <View style={styles.divider} />
-
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>AI Confidence</Text>
-
-                  <Text style={styles.detailValueHighlight}>
-                    {Math.round(
-                      result.confidence <= 1
-                        ? result.confidence * 100
-                        : result.confidence,
-                    )}
-                    %
-                  </Text>
-                </View>
-              </>
-            )}
-
-            {result.conditionDescription && (
-              <>
-                <View style={styles.divider} />
-
-                <View style={styles.detailColumn}>
-                  <Text style={styles.detailLabel}>Condition Notes</Text>
-
-                  <Text style={styles.descriptionText}>
-                    {result.conditionDescription}
-                  </Text>
-                </View>
-              </>
-            )}
-
-            {result.identifyingDetails &&
-              result.identifyingDetails.length > 0 && (
+              {loading && (
                 <>
-                  <View style={styles.divider} />
+                  <View style={styles.scanOverlay} />
 
-                  <View style={styles.detailColumn}>
-                    <Text style={styles.detailLabel}>Identifying Details</Text>
+                  <Animated.View style={[styles.scanLine, animatedScanStyle]} />
 
-                    {result.identifyingDetails.map((detail, index) => (
-                      <Text key={index} style={styles.listItem}>
-                        • {detail}
-                      </Text>
-                    ))}
+                  <View style={styles.scanningBadge}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+
+                    <Text style={styles.scanningText}>ANALYZING</Text>
                   </View>
                 </>
               )}
-
-            {result.visibleText && result.visibleText.length > 0 && (
-              <>
-                <View style={styles.divider} />
-
-                <View style={styles.detailColumn}>
-                  <Text style={styles.detailLabel}>Visible Text</Text>
-
-                  {result.visibleText.map((text, index) => (
-                    <Text key={index} style={styles.listItem}>
-                      • {text}
-                    </Text>
-                  ))}
-                </View>
-              </>
-            )}
-
-            {result.accessories && result.accessories.length > 0 && (
-              <>
-                <View style={styles.divider} />
-
-                <View style={styles.detailColumn}>
-                  <Text style={styles.detailLabel}>Accessories</Text>
-
-                  {result.accessories.map((accessory, index) => (
-                    <Text key={index} style={styles.listItem}>
-                      • {accessory}
-                    </Text>
-                  ))}
-                </View>
-              </>
-            )}
-          </View>
-
-          {/* ========================================
-              LISTING GENERATION
-              ======================================== */}
-
-          {generatingListing && (
-            <Animated.View
-              entering={FadeInUp.duration(500)}
-              style={styles.listingLoadingCard}
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.placeholderBox}
+              onPress={openCamera}
+              activeOpacity={0.9}
             >
-              <ActivityIndicator size="small" color="#FFFFFF" />
-
-              <Text style={styles.listingLoadingTitle}>
-                Creating your listing...
-              </Text>
-
-              <Text style={styles.listingLoadingSubtitle}>
-                Worthly is writing a marketplace listing based on the analysis.
-              </Text>
-            </Animated.View>
-          )}
-
-          {/* GENERATED LISTING */}
-
-          {listing && !generatingListing && (
-            <Animated.View
-              entering={FadeInUp.duration(600)}
-              style={styles.listingContainer}
-            >
-              <View style={styles.listingHeader}>
-                <View>
-                  <Text style={styles.listingEyebrow}>MARKETPLACE</Text>
-
-                  <Text style={styles.listingTitle}>YOUR LISTING</Text>
-                </View>
-
-                <Ionicons name="create-outline" size={26} color="#FFFFFF" />
+              <View style={styles.scanIconCircle}>
+                <Ionicons name="camera-outline" size={32} color="#FFFFFF" />
               </View>
 
+              <Text style={styles.placeholderTitle}>Scan an item</Text>
+
+              <Text style={styles.placeholderSub}>
+                Take a photo to discover its value
+              </Text>
+            </TouchableOpacity>
+          )}
+        </Animated.View>
+
+        {/* CAMERA */}
+
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={openCamera}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="camera" size={20} color="#000000" />
+
+          <Text style={styles.primaryButtonText}>SCAN ITEM</Text>
+        </TouchableOpacity>
+
+        {/* GALLERY */}
+
+        <TouchableOpacity
+          style={styles.galleryButton}
+          onPress={openGallery}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="images-outline" size={17} color="#AAAAAA" />
+
+          <Text style={styles.galleryText}>Choose from Camera Roll</Text>
+        </TouchableOpacity>
+
+        {/* ANALYSIS LOADING */}
+
+        {loading && (
+          <View style={styles.loadingCard}>
+            <View style={styles.loadingIcon}>
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            </View>
+
+            <View style={styles.loadingContent}>
+              <Text style={styles.loadingTitle}>Finding the value</Text>
+
+              <Text style={styles.loadingSubtitle}>
+                Identifying your item and checking its market value.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* RESULTS */}
+
+        {result && (
+          <Animated.View
+            entering={FadeInUp.duration(500)}
+            style={styles.resultsContainer}
+          >
+            {/* VALUE */}
+
+            {result.estimatedValue && (
+              <View style={styles.valueCard}>
+                <View style={styles.valueTopRow}>
+                  <View>
+                    <Text style={styles.valueEyebrow}>ESTIMATED VALUE</Text>
+
+                    <Text style={styles.valueTitle}>What it's worth</Text>
+                  </View>
+
+                  <View style={styles.valueIcon}>
+                    <Ionicons name="trending-up" size={20} color="#FFFFFF" />
+                  </View>
+                </View>
+
+                <Text style={styles.valueMain}>
+                  ${result.estimatedValue.average}
+                </Text>
+
+                <Text style={styles.valueCurrency}>
+                  {result.estimatedValue.currency} • typical market value
+                </Text>
+
+                <View style={styles.rangeRow}>
+                  <Text style={styles.rangeText}>
+                    ${result.estimatedValue.min}
+                  </Text>
+
+                  <View style={styles.rangeLine}>
+                    <View style={styles.rangeLineFill} />
+                  </View>
+
+                  <Text style={styles.rangeText}>
+                    ${result.estimatedValue.max}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* ITEM SUMMARY */}
+
+            <View style={styles.summaryCard}>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={styles.sectionEyebrow}>IDENTIFIED ITEM</Text>
+
+                  <Text style={styles.itemName}>
+                    {result.name || "Unknown item"}
+                  </Text>
+                </View>
+
+                {result.confidence !== undefined && (
+                  <View style={styles.confidenceBadge}>
+                    <Text style={styles.confidenceText}>
+                      {Math.round(
+                        result.confidence <= 1
+                          ? result.confidence * 100
+                          : result.confidence,
+                      )}
+                      %
+                    </Text>
+
+                    <Text style={styles.confidenceLabel}>confidence</Text>
+                  </View>
+                )}
+              </View>
+
+              <Text style={styles.itemMeta}>
+                {result.brand || "Unknown brand"}
+                {result.model ? ` • ${result.model}` : ""}
+              </Text>
+
+              <View style={styles.tagRow}>
+                {result.category && (
+                  <View style={styles.tag}>
+                    <Text style={styles.tagText}>{result.category}</Text>
+                  </View>
+                )}
+
+                {result.condition && (
+                  <View style={styles.tag}>
+                    <Text style={styles.tagText}>{result.condition}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* DETAILS */}
+
+            <View style={styles.detailsCard}>
+              <Text style={styles.sectionEyebrow}>ITEM DETAILS</Text>
+
+              {result.conditionDescription && (
+                <View style={styles.detailBlock}>
+                  <Text style={styles.detailLabel}>CONDITION</Text>
+
+                  <Text style={styles.detailText}>
+                    {result.conditionDescription}
+                  </Text>
+                </View>
+              )}
+
+              {result.identifyingDetails &&
+                result.identifyingDetails.length > 0 && (
+                  <View style={styles.detailBlock}>
+                    <Text style={styles.detailLabel}>IDENTIFYING DETAILS</Text>
+
+                    {result.identifyingDetails.map((detail, index) => (
+                      <View key={index} style={styles.bulletRow}>
+                        <View style={styles.bullet} />
+
+                        <Text style={styles.bulletText}>{detail}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+              {result.accessories && result.accessories.length > 0 && (
+                <View style={styles.detailBlock}>
+                  <Text style={styles.detailLabel}>INCLUDED ACCESSORIES</Text>
+
+                  {result.accessories.map((accessory, index) => (
+                    <View key={index} style={styles.bulletRow}>
+                      <View style={styles.bullet} />
+
+                      <Text style={styles.bulletText}>{accessory}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {result.visibleText && result.visibleText.length > 0 && (
+                <View style={styles.detailBlock}>
+                  <Text style={styles.detailLabel}>TEXT FOUND</Text>
+
+                  <Text style={styles.detailText}>
+                    {result.visibleText.join(", ")}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* LISTING GENERATION */}
+
+            {generatingListing && (
+              <View style={styles.generatingCard}>
+                <ActivityIndicator size="small" color="#FFFFFF" />
+
+                <View style={styles.generatingContent}>
+                  <Text style={styles.generatingTitle}>
+                    Creating your listing
+                  </Text>
+
+                  <Text style={styles.generatingSubtitle}>
+                    Writing a title, description and suggested price.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* LISTING */}
+
+            {listing && !generatingListing && (
+              <Animated.View
+                entering={FadeInUp.duration(500)}
+                style={styles.listingCard}
+              >
+                <View style={styles.listingHeader}>
+                  <View>
+                    <Text style={styles.sectionEyebrow}>READY TO SELL</Text>
+
+                    <Text style={styles.listingTitle}>Your listing</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.editIconButton}
+                    onPress={openEditListing}
+                  >
+                    <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* TITLE */}
+
+                <View style={styles.listingField}>
+                  <Text style={styles.fieldLabel}>TITLE</Text>
+
+                  <Text style={styles.listingTitleText}>{listing.title}</Text>
+                </View>
+
+                {/* DESCRIPTION */}
+
+                <View style={styles.listingField}>
+                  <Text style={styles.fieldLabel}>DESCRIPTION</Text>
+
+                  <Text style={styles.listingDescription}>
+                    {listing.description}
+                  </Text>
+                </View>
+
+                {/* PRICE */}
+
+                <View style={styles.suggestedPriceCard}>
+                  <View>
+                    <Text style={styles.fieldLabel}>
+                      SUGGESTED ASKING PRICE
+                    </Text>
+
+                    <Text style={styles.suggestedPrice}>
+                      ${listing.suggestedPrice}
+                    </Text>
+                  </View>
+
+                  <Ionicons name="pricetag-outline" size={25} color="#FFFFFF" />
+                </View>
+
+                {/* CONDITION / CATEGORY */}
+
+                <View style={styles.twoColumnRow}>
+                  <View style={styles.smallField}>
+                    <Text style={styles.fieldLabel}>CONDITION</Text>
+
+                    <Text style={styles.smallFieldValue}>
+                      {listing.condition}
+                    </Text>
+                  </View>
+
+                  <View style={styles.smallField}>
+                    <Text style={styles.fieldLabel}>CATEGORY</Text>
+
+                    <Text style={styles.smallFieldValue}>
+                      {listing.category}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* KEYWORDS */}
+
+                {listing.keywords && listing.keywords.length > 0 && (
+                  <View style={styles.listingField}>
+                    <Text style={styles.fieldLabel}>SEARCH KEYWORDS</Text>
+
+                    <View style={styles.keywordContainer}>
+                      {listing.keywords.map((keyword, index) => (
+                        <View key={index} style={styles.keyword}>
+                          <Text style={styles.keywordText}>{keyword}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* REASONING */}
+
+                {listing.priceReasoning && (
+                  <View style={styles.reasoningCard}>
+                    <Ionicons name="bulb-outline" size={18} color="#AAAAAA" />
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.reasoningTitle}>Why this price?</Text>
+
+                      <Text style={styles.reasoningText}>
+                        {listing.priceReasoning}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* EDIT */}
+
+                <TouchableOpacity
+                  style={styles.editButton}
+                  onPress={openEditListing}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="create-outline" size={19} color="#000000" />
+
+                  <Text style={styles.editButtonText}>EDIT LISTING</Text>
+                </TouchableOpacity>
+
+                {/* SELL */}
+
+                <TouchableOpacity
+                  style={styles.sellButton}
+                  onPress={handleSell}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="arrow-up-circle" size={21} color="#FFFFFF" />
+
+                  <Text style={styles.sellButtonText}>CONTINUE TO SELL</Text>
+
+                  <Ionicons name="chevron-forward" size={19} color="#FFFFFF" />
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+          </Animated.View>
+        )}
+
+        {/* DISCLAIMER */}
+
+        <View style={styles.disclaimer}>
+          <Ionicons
+            name="information-circle-outline"
+            size={17}
+            color="#666666"
+          />
+
+          <Text style={styles.disclaimerText}>
+            Worthly's valuation is an estimate. Actual selling prices may vary
+            based on condition, demand, location and timing.
+          </Text>
+        </View>
+      </ScrollView>
+
+      {/* ==================================================
+          EDIT LISTING MODAL
+          ================================================== */}
+
+      <Modal
+        visible={editingListing}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setEditingListing(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalContainer}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalEyebrow}>LISTING</Text>
+
+                <Text style={styles.modalTitle}>Edit listing</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={() => setEditingListing(false)}
+              >
+                <Ionicons name="close" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               {/* TITLE */}
 
-              <View style={styles.listingField}>
-                <Text style={styles.listingLabel}>TITLE</Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>TITLE</Text>
 
-                <Text style={styles.listingValueLarge}>{listing.title}</Text>
+                <TextInput
+                  value={editTitle}
+                  onChangeText={setEditTitle}
+                  style={styles.input}
+                  placeholder="Listing title"
+                  placeholderTextColor="#555555"
+                  multiline
+                />
               </View>
 
               {/* DESCRIPTION */}
 
-              <View style={styles.listingField}>
-                <Text style={styles.listingLabel}>DESCRIPTION</Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>DESCRIPTION</Text>
 
-                <Text style={styles.listingDescription}>
-                  {listing.description}
-                </Text>
+                <TextInput
+                  value={editDescription}
+                  onChangeText={setEditDescription}
+                  style={[styles.input, styles.descriptionInput]}
+                  placeholder="Describe the item..."
+                  placeholderTextColor="#555555"
+                  multiline
+                  textAlignVertical="top"
+                />
               </View>
 
               {/* PRICE */}
 
-              <View style={styles.listingPriceCard}>
-                <Text style={styles.listingLabel}>SUGGESTED ASKING PRICE</Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>ASKING PRICE</Text>
 
-                <Text style={styles.listingPrice}>
-                  ${listing.suggestedPrice}
-                </Text>
+                <View style={styles.priceInputWrapper}>
+                  <Text style={styles.priceSymbol}>$</Text>
+
+                  <TextInput
+                    value={editPrice}
+                    onChangeText={(text) =>
+                      setEditPrice(text.replace(/[^0-9.]/g, ""))
+                    }
+                    style={styles.priceInput}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor="#555555"
+                  />
+                </View>
               </View>
 
               {/* CONDITION */}
 
-              <View style={styles.listingField}>
-                <Text style={styles.listingLabel}>CONDITION</Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>CONDITION</Text>
 
-                <Text style={styles.listingValue}>{listing.condition}</Text>
+                <TextInput
+                  value={editCondition}
+                  onChangeText={setEditCondition}
+                  style={styles.input}
+                  placeholder="Condition"
+                  placeholderTextColor="#555555"
+                />
               </View>
 
               {/* CATEGORY */}
 
-              <View style={styles.listingField}>
-                <Text style={styles.listingLabel}>CATEGORY</Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>CATEGORY</Text>
 
-                <Text style={styles.listingValue}>{listing.category}</Text>
+                <TextInput
+                  value={editCategory}
+                  onChangeText={setEditCategory}
+                  style={styles.input}
+                  placeholder="Category"
+                  placeholderTextColor="#555555"
+                />
               </View>
 
-              {/* KEYWORDS */}
-
-              {listing.keywords && listing.keywords.length > 0 && (
-                <View style={styles.listingField}>
-                  <Text style={styles.listingLabel}>KEYWORDS</Text>
-
-                  <View style={styles.keywordContainer}>
-                    {listing.keywords.map((keyword, index) => (
-                      <View key={index} style={styles.keyword}>
-                        <Text style={styles.keywordText}>{keyword}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {/* PRICE REASONING */}
-
-              {listing.priceReasoning && (
-                <View style={styles.reasoningCard}>
-                  <Text style={styles.listingLabel}>PRICE REASONING</Text>
-
-                  <Text style={styles.reasoningText}>
-                    {listing.priceReasoning}
-                  </Text>
-                </View>
-              )}
-
-              {/* EDIT BUTTON */}
+              {/* SAVE */}
 
               <TouchableOpacity
-                style={styles.editListingButton}
+                style={styles.saveButton}
+                onPress={saveEditedListing}
                 activeOpacity={0.85}
-                onPress={() => {
-                  Alert.alert(
-                    "Edit Listing",
-                    "Listing editing will be added next.",
-                  );
-                }}
               >
-                <Ionicons name="create-outline" size={20} color="#000000" />
+                <Ionicons name="checkmark" size={20} color="#000000" />
 
-                <Text style={styles.editListingText}>EDIT LISTING</Text>
+                <Text style={styles.saveButtonText}>SAVE CHANGES</Text>
               </TouchableOpacity>
-
-              {/* SELL BUTTON */}
 
               <TouchableOpacity
-                style={styles.sellButton}
-                activeOpacity={0.85}
-                onPress={() => {
-                  Alert.alert(
-                    "Sell Item",
-                    "Marketplace integration will be added next.",
-                  );
-                }}
+                style={styles.cancelButton}
+                onPress={() => setEditingListing(false)}
               >
-                <Ionicons
-                  name="arrow-up-circle-outline"
-                  size={22}
-                  color="#FFFFFF"
-                />
-
-                <Text style={styles.sellButtonText}>SELL THIS ITEM</Text>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-            </Animated.View>
-          )}
-        </Animated.View>
-      )}
-    </ScrollView>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </>
   );
 }
 
@@ -684,67 +884,115 @@ export default function ImageAnalyzer() {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    padding: 24,
-    backgroundColor: "#000000",
-    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 50,
+    backgroundColor: "#050505",
   },
 
   header: {
-    marginTop: 20,
-    marginBottom: 24,
     alignItems: "center",
+    marginBottom: 26,
   },
 
-  badge: {
-    backgroundColor: "#111111",
-    borderColor: "#333333",
+  modeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#101010",
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderColor: "#252525",
+    paddingHorizontal: 11,
+    paddingVertical: 6,
     borderRadius: 20,
     marginBottom: 12,
   },
 
-  badgeText: {
-    color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "700",
+  modeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#FFFFFF",
+    marginRight: 7,
+  },
+
+  modeText: {
+    color: "#AAAAAA",
+    fontSize: 9,
+    fontWeight: "800",
     letterSpacing: 1.5,
   },
 
   headerTitle: {
-    fontSize: 32,
-    fontWeight: "800",
     color: "#FFFFFF",
-    letterSpacing: 2,
+    fontSize: 38,
+    fontWeight: "900",
+    letterSpacing: -1.5,
   },
 
   headerSubtitle: {
+    color: "#777777",
     fontSize: 14,
-    color: "#888888",
     marginTop: 6,
-    letterSpacing: 0.5,
   },
 
   imageContainer: {
     width: "100%",
-    alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 14,
   },
 
   imageWrapper: {
     width: "100%",
-    height: 280,
-    borderRadius: 16,
+    height: 300,
+    borderRadius: 20,
     overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#333333",
     backgroundColor: "#0A0A0A",
+    borderWidth: 1,
+    borderColor: "#282828",
   },
 
   previewImage: {
     width: "100%",
     height: "100%",
+  },
+
+  placeholderBox: {
+    height: 300,
+    width: "100%",
+    borderRadius: 20,
+    backgroundColor: "#0A0A0A",
+    borderWidth: 1,
+    borderColor: "#252525",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  scanIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#151515",
+    borderWidth: 1,
+    borderColor: "#333333",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+
+  placeholderTitle: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+
+  placeholderSub: {
+    color: "#666666",
+    fontSize: 13,
+    marginTop: 7,
+  },
+
+  scanOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.12)",
   },
 
   scanLine: {
@@ -753,379 +1001,665 @@ const styles = StyleSheet.create({
     right: 0,
     height: 2,
     backgroundColor: "#FFFFFF",
-    boxShadow: "0px 0px 8px rgba(255, 255, 255, 0.8)",
   },
 
-  placeholderBox: {
-    width: "100%",
-    height: 280,
-    borderRadius: 16,
-    backgroundColor: "#0A0A0A",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#222222",
-  },
-
-  placeholderText: {
-    marginTop: 16,
-    fontSize: 12,
-    color: "#FFFFFF",
-    fontWeight: "700",
-    letterSpacing: 1.5,
-  },
-
-  placeholderSub: {
-    marginTop: 6,
-    fontSize: 12,
-    color: "#666666",
-  },
-
-  primaryBtn: {
-    width: "100%",
+  scanningBadge: {
+    position: "absolute",
+    top: 15,
+    left: 15,
     flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.75)",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+
+  scanningText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    marginLeft: 8,
+  },
+
+  primaryButton: {
+    height: 56,
+    width: "100%",
     backgroundColor: "#FFFFFF",
-    paddingVertical: 18,
-    borderRadius: 12,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  primaryButtonText: {
+    color: "#000000",
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    marginLeft: 9,
+  },
+
+  galleryButton: {
+    height: 48,
+    flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: 14,
   },
 
-  btnTextBlack: {
-    color: "#000000",
-    fontSize: 14,
-    fontWeight: "800",
-    marginLeft: 10,
-    letterSpacing: 1,
-  },
-
-  galleryLink: {
-    marginTop: 20,
-    marginBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#444444",
-  },
-
-  galleryLinkText: {
-    color: "#AAAAAA",
+  galleryText: {
+    color: "#999999",
     fontSize: 13,
-    fontWeight: "500",
-    paddingBottom: 2,
+    marginLeft: 7,
   },
 
   loadingCard: {
     width: "100%",
-    backgroundColor: "#0A0A0A",
-    padding: 24,
+    padding: 18,
     borderRadius: 16,
-    alignItems: "center",
+    backgroundColor: "#0B0B0B",
     borderWidth: 1,
-    borderColor: "#222222",
+    borderColor: "#242424",
     flexDirection: "row",
-    justifyContent: "center",
-  },
-
-  loadingText: {
-    marginLeft: 12,
-    fontSize: 13,
-    color: "#FFFFFF",
-    fontWeight: "600",
-    letterSpacing: 0.5,
-  },
-
-  resultsContainer: {
-    width: "100%",
-    paddingBottom: 40,
-    marginTop: 10,
-  },
-
-  priceCard: {
-    backgroundColor: "#0A0A0A",
-    borderColor: "#333333",
-    borderWidth: 1,
-    padding: 24,
-    borderRadius: 16,
     alignItems: "center",
     marginBottom: 16,
   },
 
-  priceLabel: {
-    color: "#888888",
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 2,
-    marginBottom: 8,
-  },
-
-  priceMain: {
-    fontSize: 48,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    letterSpacing: -1,
-  },
-
-  currency: {
-    fontSize: 20,
-    color: "#888888",
-    fontWeight: "600",
-  },
-
-  priceRange: {
-    marginTop: 8,
-    fontSize: 13,
-    color: "#666666",
-    fontWeight: "500",
-  },
-
-  detailsCard: {
-    backgroundColor: "#0A0A0A",
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: "#222222",
-  },
-
-  sectionTitle: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#888888",
-    letterSpacing: 2,
-    marginBottom: 20,
-  },
-
-  detailRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 14,
-  },
-
-  detailColumn: {
-    paddingVertical: 14,
-  },
-
-  detailLabel: {
-    fontSize: 13,
-    color: "#888888",
-    fontWeight: "500",
-    marginBottom: 8,
-  },
-
-  detailValue: {
-    fontSize: 14,
-    color: "#FFFFFF",
-    fontWeight: "600",
-    maxWidth: "60%",
-    textAlign: "right",
-  },
-
-  detailValueHighlight: {
-    fontSize: 14,
-    color: "#FFFFFF",
-    fontWeight: "700",
-  },
-
-  descriptionText: {
-    fontSize: 14,
-    color: "#FFFFFF",
-    lineHeight: 21,
-  },
-
-  listItem: {
-    fontSize: 14,
-    color: "#FFFFFF",
-    lineHeight: 22,
-    marginBottom: 4,
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: "#1A1A1A",
-  },
-
-  // ====================================================
-  // LISTING UI
-  // ====================================================
-
-  listingLoadingCard: {
-    width: "100%",
-    marginTop: 16,
-    padding: 24,
-    borderRadius: 16,
-    backgroundColor: "#0A0A0A",
-    borderWidth: 1,
-    borderColor: "#333333",
+  loadingIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#161616",
+    justifyContent: "center",
     alignItems: "center",
   },
 
-  listingLoadingTitle: {
+  loadingContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  loadingTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  loadingSubtitle: {
+    color: "#666666",
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+
+  resultsContainer: {
+    width: "100%",
+  },
+
+  valueCard: {
+    backgroundColor: "#0D0D0D",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#303030",
+    padding: 22,
+    marginBottom: 14,
+  },
+
+  valueTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+
+  valueEyebrow: {
+    color: "#777777",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.8,
+  },
+
+  valueTitle: {
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
-    marginTop: 12,
+    marginTop: 4,
   },
 
-  listingLoadingSubtitle: {
+  valueIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#191919",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  valueMain: {
+    color: "#FFFFFF",
+    fontSize: 52,
+    fontWeight: "900",
+    letterSpacing: -2,
+    marginTop: 15,
+  },
+
+  valueCurrency: {
     color: "#777777",
     fontSize: 12,
-    textAlign: "center",
-    lineHeight: 18,
-    marginTop: 8,
+    marginTop: -3,
   },
 
-  listingContainer: {
-    width: "100%",
+  rangeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 20,
+  },
+
+  rangeText: {
+    color: "#888888",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  rangeLine: {
+    flex: 1,
+    height: 4,
+    backgroundColor: "#252525",
+    borderRadius: 2,
+    marginHorizontal: 10,
+    overflow: "hidden",
+  },
+
+  rangeLineFill: {
+    width: "65%",
+    height: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 2,
+  },
+
+  summaryCard: {
+    backgroundColor: "#0B0B0B",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#222222",
+    padding: 20,
+    marginBottom: 14,
+  },
+
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+
+  sectionEyebrow: {
+    color: "#666666",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.8,
+    marginBottom: 7,
+  },
+
+  itemName: {
+    color: "#FFFFFF",
+    fontSize: 21,
+    fontWeight: "800",
+    maxWidth: width * 0.62,
+  },
+
+  itemMeta: {
+    color: "#888888",
+    fontSize: 13,
+    marginTop: 6,
+  },
+
+  confidenceBadge: {
+    alignItems: "flex-end",
+  },
+
+  confidenceText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  confidenceLabel: {
+    color: "#555555",
+    fontSize: 9,
+    marginTop: 2,
+  },
+
+  tagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     marginTop: 16,
-    backgroundColor: "#0A0A0A",
-    borderRadius: 16,
+  },
+
+  tag: {
+    backgroundColor: "#161616",
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 7,
+    marginBottom: 5,
+  },
+
+  tagText: {
+    color: "#AAAAAA",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+
+  detailsCard: {
+    backgroundColor: "#0B0B0B",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#222222",
+    padding: 20,
+    marginBottom: 14,
+  },
+
+  detailBlock: {
+    borderTopWidth: 1,
+    borderTopColor: "#1A1A1A",
+    paddingTop: 16,
+    marginTop: 16,
+  },
+
+  detailLabel: {
+    color: "#666666",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    marginBottom: 8,
+  },
+
+  detailText: {
+    color: "#CCCCCC",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+
+  bulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 7,
+  },
+
+  bullet: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#FFFFFF",
+    marginTop: 7,
+    marginRight: 9,
+  },
+
+  bulletText: {
+    flex: 1,
+    color: "#CCCCCC",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+
+  generatingCard: {
+    width: "100%",
+    padding: 20,
+    borderRadius: 18,
+    backgroundColor: "#0B0B0B",
+    borderWidth: 1,
+    borderColor: "#292929",
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+
+  generatingContent: {
+    flex: 1,
+    marginLeft: 13,
+  },
+
+  generatingTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  generatingSubtitle: {
+    color: "#666666",
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+
+  listingCard: {
+    backgroundColor: "#0B0B0B",
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: "#333333",
-    padding: 24,
+    padding: 20,
+    marginBottom: 20,
   },
 
   listingHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 24,
-  },
-
-  listingEyebrow: {
-    color: "#666666",
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 2,
-    marginBottom: 5,
+    marginBottom: 8,
   },
 
   listingTitle: {
     color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: 1,
+    fontSize: 24,
+    fontWeight: "900",
+  },
+
+  editIconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#161616",
+    borderWidth: 1,
+    borderColor: "#303030",
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   listingField: {
-    paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: "#1A1A1A",
+    paddingTop: 16,
+    marginTop: 16,
   },
 
-  listingLabel: {
-    color: "#777777",
+  fieldLabel: {
+    color: "#666666",
     fontSize: 9,
-    fontWeight: "800",
+    fontWeight: "900",
     letterSpacing: 1.5,
     marginBottom: 8,
   },
 
-  listingValueLarge: {
+  listingTitleText: {
     color: "#FFFFFF",
-    fontSize: 18,
+    fontSize: 17,
+    lineHeight: 24,
     fontWeight: "700",
-    lineHeight: 25,
-  },
-
-  listingValue: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "600",
   },
 
   listingDescription: {
-    color: "#CCCCCC",
-    fontSize: 14,
-    lineHeight: 22,
+    color: "#BBBBBB",
+    fontSize: 13,
+    lineHeight: 21,
   },
 
-  listingPriceCard: {
-    marginVertical: 8,
-    padding: 20,
-    backgroundColor: "#111111",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#333333",
+  suggestedPriceCard: {
+    backgroundColor: "#151515",
+    borderRadius: 15,
+    padding: 18,
+    marginTop: 18,
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#303030",
   },
 
-  listingPrice: {
+  suggestedPrice: {
     color: "#FFFFFF",
-    fontSize: 40,
-    fontWeight: "800",
+    fontSize: 36,
+    fontWeight: "900",
+    letterSpacing: -1,
+  },
+
+  twoColumnRow: {
+    flexDirection: "row",
+    marginTop: 16,
+  },
+
+  smallField: {
+    flex: 1,
+    borderTopWidth: 1,
+    borderTopColor: "#1A1A1A",
+    paddingTop: 16,
+  },
+
+  smallFieldValue: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
   },
 
   keywordContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
   },
 
   keyword: {
     backgroundColor: "#161616",
     borderWidth: 1,
-    borderColor: "#333333",
+    borderColor: "#292929",
+    borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 7,
-    borderRadius: 20,
+    marginRight: 6,
+    marginBottom: 6,
   },
 
   keywordText: {
-    color: "#FFFFFF",
-    fontSize: 12,
+    color: "#AAAAAA",
+    fontSize: 11,
     fontWeight: "600",
   },
 
   reasoningCard: {
-    marginTop: 12,
-    padding: 16,
-    backgroundColor: "#111111",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#222222",
+    flexDirection: "row",
+    gap: 10,
+    backgroundColor: "#121212",
+    borderRadius: 14,
+    padding: 15,
+    marginTop: 16,
+  },
+
+  reasoningTitle: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 4,
   },
 
   reasoningText: {
-    color: "#AAAAAA",
-    fontSize: 13,
-    lineHeight: 20,
+    color: "#888888",
+    fontSize: 11,
+    lineHeight: 17,
   },
 
-  editListingButton: {
-    marginTop: 20,
-    width: "100%",
+  editButton: {
+    height: 53,
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    paddingVertical: 16,
-    flexDirection: "row",
+    borderRadius: 13,
     justifyContent: "center",
     alignItems: "center",
+    flexDirection: "row",
+    marginTop: 20,
   },
 
-  editListingText: {
+  editButtonText: {
     color: "#000000",
-    fontSize: 13,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "900",
     letterSpacing: 1,
     marginLeft: 8,
   },
 
   sellButton: {
-    marginTop: 12,
-    width: "100%",
+    height: 53,
     backgroundColor: "#000000",
-    borderRadius: 12,
-    paddingVertical: 16,
-    flexDirection: "row",
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: "#3A3A3A",
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#444444",
+    flexDirection: "row",
+    marginTop: 10,
   },
 
   sellButtonText: {
     color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginHorizontal: 8,
+  },
+
+  disclaimer: {
+    flexDirection: "row",
+    paddingHorizontal: 4,
+    marginTop: 3,
+  },
+
+  disclaimerText: {
+    flex: 1,
+    color: "#555555",
+    fontSize: 10,
+    lineHeight: 16,
+    marginLeft: 7,
+  },
+
+  // =====================================================
+  // EDIT MODAL
+  // =====================================================
+
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.82)",
+    justifyContent: "flex-end",
+  },
+
+  modalCard: {
+    maxHeight: "92%",
+    backgroundColor: "#0A0A0A",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 30,
+    borderTopWidth: 1,
+    borderColor: "#333333",
+  },
+
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+
+  modalEyebrow: {
+    color: "#666666",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+  },
+
+  modalTitle: {
+    color: "#FFFFFF",
+    fontSize: 25,
+    fontWeight: "900",
+    marginTop: 3,
+  },
+
+  modalClose: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#171717",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  inputGroup: {
+    marginBottom: 17,
+  },
+
+  inputLabel: {
+    color: "#777777",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.4,
+    marginBottom: 8,
+  },
+
+  input: {
+    backgroundColor: "#111111",
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+    borderRadius: 12,
+    minHeight: 52,
+    paddingHorizontal: 15,
+    paddingVertical: 13,
+    color: "#FFFFFF",
+    fontSize: 14,
+  },
+
+  descriptionInput: {
+    minHeight: 130,
+  },
+
+  priceInputWrapper: {
+    height: 55,
+    backgroundColor: "#111111",
+    borderWidth: 1,
+    borderColor: "#2A2A2A",
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 15,
+  },
+
+  priceSymbol: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+
+  priceInput: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "700",
+    marginLeft: 7,
+  },
+
+  saveButton: {
+    height: 55,
+    borderRadius: 13,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    flexDirection: "row",
+    marginTop: 4,
+  },
+
+  saveButtonText: {
+    color: "#000000",
+    fontSize: 12,
+    fontWeight: "900",
     letterSpacing: 1,
     marginLeft: 8,
+  },
+
+  cancelButton: {
+    height: 45,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  cancelButtonText: {
+    color: "#777777",
+    fontSize: 13,
   },
 });
