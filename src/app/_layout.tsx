@@ -1,76 +1,93 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, View } from "react-native";
 
-export default function RootLayout() {
+import { supabase } from "../../lib/supabase";
+import { ThemeProvider, useTheme } from "../context/ThemeContext";
+
+function RootNavigator() {
+  const router = useRouter();
+  const segments = useSegments();
+
+  const { colors } = useTheme();
+
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+
+      setIsLoggedIn(!!data.session);
+      setSessionLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+
+      setIsLoggedIn(!!session);
+      setSessionLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (sessionLoading) return;
+
+    const inAuthScreen = segments[0] === "auth";
+
+    if (!isLoggedIn && !inAuthScreen) {
+      router.replace("/auth");
+      return;
+    }
+
+    if (isLoggedIn && inAuthScreen) {
+      router.replace("/tabs/buy");
+    }
+  }, [isLoggedIn, sessionLoading, segments, router]);
+
+  if (sessionLoading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <ActivityIndicator size="large" color={colors.text} />
+      </View>
+    );
+  }
+
   return (
-    <Tabs
+    <Stack
       screenOptions={{
         headerShown: false,
-
-        tabBarStyle: {
-          backgroundColor: "#090A0F",
-          borderTopColor: "#222222",
-          height: 70,
-          paddingBottom: 10,
-          paddingTop: 8,
-        },
-
-        tabBarActiveTintColor: "#FFFFFF",
-        tabBarInactiveTintColor: "#666666",
-
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "700",
+        contentStyle: {
+          backgroundColor: colors.background,
         },
       }}
     >
-      {/* BUY */}
-      <Tabs.Screen
-        name="buy"
-        options={{
-          title: "Buy",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="cart-outline" size={size} color={color} />
-          ),
-        }}
-      />
+      <Stack.Screen name="auth" />
+      <Stack.Screen name="(tabs)" />
+    </Stack>
+  );
+}
 
-      {/* SELL */}
-      <Tabs.Screen
-        name="sell"
-        options={{
-          title: "Sell",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="pricetag-outline" size={size} color={color} />
-          ),
-        }}
-      />
-
-      {/* EXPLORE */}
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: "Explore",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="time-outline" size={size} color={color} />
-          ),
-        }}
-      />
-
-      {/* These are NOT tabs */}
-      <Tabs.Screen
-        name="index"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="seller"
-        options={{
-          href: null,
-        }}
-      />
-    </Tabs>
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootNavigator />
+    </ThemeProvider>
   );
 }

@@ -2,20 +2,22 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
+import { useTheme } from "../context/ThemeContext";
+
 const { width } = Dimensions.get("window");
 
 interface EstimatedValue {
@@ -42,16 +44,13 @@ interface AnalysisResult {
 type DealStatus = "GOOD" | "FAIR" | "BAD";
 
 export default function BuyerAnalyzer() {
+  const { colors, isDark } = useTheme();
+
   const [imageUri, setImageUri] = useState<string | null>(null);
-
   const [loading, setLoading] = useState(false);
-
   const [result, setResult] = useState<AnalysisResult | null>(null);
-
   const [askingPrice, setAskingPrice] = useState("");
-
   const [dealStatus, setDealStatus] = useState<DealStatus | null>(null);
-
   const [priceDifference, setPriceDifference] = useState<number | null>(null);
 
   const analyzeDeal = (priceText: string, analysis: AnalysisResult | null) => {
@@ -70,18 +69,9 @@ export default function BuyerAnalyzer() {
     }
 
     const average = analysis.estimatedValue.average;
-
     const difference = average - price;
 
     setPriceDifference(difference);
-
-    /*
-      Deal thresholds:
-
-      15%+ below estimated value = GOOD DEAL
-      Between -15% and +15% = FAIR
-      15%+ above estimated value = OVERPRICED
-    */
 
     const percentageDifference = (price - average) / average;
 
@@ -95,11 +85,9 @@ export default function BuyerAnalyzer() {
   };
 
   const handleAskingPriceChange = (text: string) => {
-    // Only allow numbers and decimal point.
     const cleaned = text.replace(/[^0-9.]/g, "");
 
     setAskingPrice(cleaned);
-
     analyzeDeal(cleaned, result);
   };
 
@@ -248,31 +236,58 @@ export default function BuyerAnalyzer() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.keyboardContainer}
+      style={[styles.keyboardContainer, { backgroundColor: colors.background }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[
+          styles.container,
+          { backgroundColor: colors.background },
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
         {/* HEADER */}
 
         <View style={styles.header}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>BUYER MODE</Text>
+          <View
+            style={[
+              styles.badge,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.badgeText, { color: colors.text }]}>
+              BUYER MODE
+            </Text>
           </View>
 
-          <Text style={styles.headerTitle}>WORTHLY</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            WORTHLY
+          </Text>
 
-          <Text style={styles.headerSubtitle}>Know what you're buying.</Text>
+          <Text
+            style={[styles.headerSubtitle, { color: colors.secondaryText }]}
+          >
+            Know what you're buying.
+          </Text>
         </View>
 
         {/* IMAGE */}
 
         <View style={styles.imageContainer}>
           {imageUri ? (
-            <View style={styles.imageWrapper}>
+            <View
+              style={[
+                styles.imageWrapper,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface,
+                },
+              ]}
+            >
               <Image source={{ uri: imageUri }} style={styles.previewImage} />
 
               {loading && (
@@ -285,15 +300,25 @@ export default function BuyerAnalyzer() {
             </View>
           ) : (
             <TouchableOpacity
-              style={styles.placeholderBox}
+              style={[
+                styles.placeholderBox,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
               onPress={openCamera}
               activeOpacity={0.9}
             >
-              <Ionicons name="scan-outline" size={48} color="#FFFFFF" />
+              <Ionicons name="scan-outline" size={48} color={colors.text} />
 
-              <Text style={styles.placeholderText}>SCAN AN ITEM</Text>
+              <Text style={[styles.placeholderText, { color: colors.text }]}>
+                SCAN AN ITEM
+              </Text>
 
-              <Text style={styles.placeholderSub}>
+              <Text
+                style={[styles.placeholderSub, { color: colors.secondaryText }]}
+              >
                 Worthly will estimate its value
               </Text>
             </TouchableOpacity>
@@ -303,28 +328,60 @@ export default function BuyerAnalyzer() {
         {/* CAMERA */}
 
         <TouchableOpacity
-          style={styles.primaryButton}
+          style={[
+            styles.primaryButton,
+            {
+              backgroundColor: colors.primary,
+              borderColor: colors.primary,
+            },
+          ]}
           onPress={openCamera}
           activeOpacity={0.85}
         >
-          <Ionicons name="camera" size={20} color="#000000" />
+          <Ionicons
+            name="camera"
+            size={20}
+            color={isDark ? "#000000" : "#FFFFFF"}
+          />
 
-          <Text style={styles.primaryButtonText}>SCAN ITEM</Text>
+          <Text
+            style={[
+              styles.primaryButtonText,
+              {
+                color: isDark ? "#000000" : "#FFFFFF",
+              },
+            ]}
+          >
+            SCAN ITEM
+          </Text>
         </TouchableOpacity>
 
         {/* GALLERY */}
 
-        <TouchableOpacity style={styles.galleryButton} onPress={openGallery}>
-          <Text style={styles.galleryText}>Select from Camera Roll</Text>
+        <TouchableOpacity
+          style={[styles.galleryButton, { borderBottomColor: colors.border }]}
+          onPress={openGallery}
+        >
+          <Text style={[styles.galleryText, { color: colors.secondaryText }]}>
+            Select from Camera Roll
+          </Text>
         </TouchableOpacity>
 
         {/* LOADING */}
 
         {loading && (
-          <View style={styles.loadingCard}>
-            <ActivityIndicator size="small" color="#FFFFFF" />
+          <View
+            style={[
+              styles.loadingCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <ActivityIndicator size="small" color={colors.text} />
 
-            <Text style={styles.loadingText}>
+            <Text style={[styles.loadingText, { color: colors.text }]}>
               Worthly is analyzing the item...
             </Text>
           </View>
@@ -336,14 +393,28 @@ export default function BuyerAnalyzer() {
           <View style={styles.resultsContainer}>
             {/* ITEM */}
 
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>ITEM IDENTIFIED</Text>
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[styles.cardEyebrow, { color: colors.secondaryText }]}
+              >
+                ITEM IDENTIFIED
+              </Text>
 
-              <Text style={styles.itemName}>
+              <Text style={[styles.itemName, { color: colors.text }]}>
                 {result.name || "Unknown Item"}
               </Text>
 
-              <Text style={styles.itemSubtext}>
+              <Text
+                style={[styles.itemSubtext, { color: colors.secondaryText }]}
+              >
                 {result.brand || "Unknown Brand"}
                 {result.model ? ` • ${result.model}` : ""}
               </Text>
@@ -352,18 +423,37 @@ export default function BuyerAnalyzer() {
             {/* ESTIMATED VALUE */}
 
             {result.estimatedValue && (
-              <View style={styles.valueCard}>
-                <Text style={styles.valueLabel}>ESTIMATED MARKET VALUE</Text>
+              <View
+                style={[
+                  styles.valueCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.valueLabel, { color: colors.secondaryText }]}
+                >
+                  ESTIMATED MARKET VALUE
+                </Text>
 
-                <Text style={styles.valueMain}>
+                <Text style={[styles.valueMain, { color: colors.text }]}>
                   ${result.estimatedValue.average}
-                  <Text style={styles.valueCurrency}>
+                  <Text
+                    style={[
+                      styles.valueCurrency,
+                      { color: colors.secondaryText },
+                    ]}
+                  >
                     {" "}
                     {result.estimatedValue.currency}
                   </Text>
                 </Text>
 
-                <Text style={styles.valueRange}>
+                <Text
+                  style={[styles.valueRange, { color: colors.secondaryText }]}
+                >
                   Typical range: ${result.estimatedValue.min} – $
                   {result.estimatedValue.max}
                 </Text>
@@ -372,23 +462,43 @@ export default function BuyerAnalyzer() {
 
             {/* ASKING PRICE */}
 
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>WHAT IS THE SELLER ASKING?</Text>
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.cardTitle, { color: colors.text }]}>
+                WHAT IS THE SELLER ASKING?
+              </Text>
 
-              <View style={styles.priceInputContainer}>
-                <Text style={styles.dollarSign}>$</Text>
+              <View
+                style={[
+                  styles.priceInputContainer,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.dollarSign, { color: colors.text }]}>
+                  $
+                </Text>
 
                 <TextInput
                   value={askingPrice}
                   onChangeText={handleAskingPriceChange}
                   placeholder="0.00"
-                  placeholderTextColor="#555555"
+                  placeholderTextColor={colors.secondaryText}
                   keyboardType="decimal-pad"
-                  style={styles.priceInput}
+                  style={[styles.priceInput, { color: colors.text }]}
                 />
               </View>
 
-              <Text style={styles.inputHint}>
+              <Text style={[styles.inputHint, { color: colors.secondaryText }]}>
                 Enter the seller's asking price to see if it's a good deal.
               </Text>
             </View>
@@ -435,15 +545,32 @@ export default function BuyerAnalyzer() {
 
             {/* CONDITION */}
 
-            <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>ITEM CONDITION</Text>
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[styles.cardEyebrow, { color: colors.secondaryText }]}
+              >
+                ITEM CONDITION
+              </Text>
 
-              <Text style={styles.conditionText}>
+              <Text style={[styles.conditionText, { color: colors.text }]}>
                 {result.condition || "Unknown"}
               </Text>
 
               {result.conditionDescription && (
-                <Text style={styles.conditionDescription}>
+                <Text
+                  style={[
+                    styles.conditionDescription,
+                    { color: colors.secondaryText },
+                  ]}
+                >
                   {result.conditionDescription}
                 </Text>
               )}
@@ -452,10 +579,25 @@ export default function BuyerAnalyzer() {
             {/* CONFIDENCE */}
 
             {result.confidence !== undefined && (
-              <View style={styles.confidenceCard}>
-                <Text style={styles.confidenceLabel}>AI CONFIDENCE</Text>
+              <View
+                style={[
+                  styles.confidenceCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.confidenceLabel,
+                    { color: colors.secondaryText },
+                  ]}
+                >
+                  AI CONFIDENCE
+                </Text>
 
-                <Text style={styles.confidenceValue}>
+                <Text style={[styles.confidenceValue, { color: colors.text }]}>
                   {Math.round(
                     result.confidence <= 1
                       ? result.confidence * 100
@@ -468,14 +610,18 @@ export default function BuyerAnalyzer() {
 
             {/* DISCLAIMER */}
 
-            <View style={styles.disclaimerCard}>
+            <View
+              style={[styles.disclaimerCard, { borderTopColor: colors.border }]}
+            >
               <Ionicons
                 name="information-circle-outline"
                 size={20}
-                color="#777777"
+                color={colors.secondaryText}
               />
 
-              <Text style={styles.disclaimerText}>
+              <Text
+                style={[styles.disclaimerText, { color: colors.secondaryText }]}
+              >
                 Worthly's valuation is an estimate based on the information
                 visible in the image. Actual prices can vary depending on
                 condition, demand, location, and seller.
@@ -491,14 +637,12 @@ export default function BuyerAnalyzer() {
 const styles = StyleSheet.create({
   keyboardContainer: {
     flex: 1,
-    backgroundColor: "#090A0F",
   },
 
   container: {
     flexGrow: 1,
     padding: 24,
     paddingBottom: 40,
-    backgroundColor: "#090A0F",
     alignItems: "center",
   },
 
@@ -509,8 +653,6 @@ const styles = StyleSheet.create({
   },
 
   badge: {
-    backgroundColor: "#111111",
-    borderColor: "#333333",
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -519,7 +661,6 @@ const styles = StyleSheet.create({
   },
 
   badgeText: {
-    color: "#FFFFFF",
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1.5,
@@ -528,13 +669,11 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 32,
     fontWeight: "800",
-    color: "#FFFFFF",
     letterSpacing: 2,
   },
 
   headerSubtitle: {
     fontSize: 14,
-    color: "#888888",
     marginTop: 6,
   },
 
@@ -549,8 +688,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#333333",
-    backgroundColor: "#0A0A0A",
   },
 
   previewImage: {
@@ -581,17 +718,14 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 280,
     borderRadius: 16,
-    backgroundColor: "#0A0A0A",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#222222",
   },
 
   placeholderText: {
     marginTop: 16,
     fontSize: 13,
-    color: "#FFFFFF",
     fontWeight: "800",
     letterSpacing: 1.5,
   },
@@ -599,12 +733,10 @@ const styles = StyleSheet.create({
   placeholderSub: {
     marginTop: 6,
     fontSize: 12,
-    color: "#666666",
   },
 
   primaryButton: {
     width: "100%",
-    backgroundColor: "#FFFFFF",
     paddingVertical: 18,
     borderRadius: 12,
     justifyContent: "center",
@@ -613,7 +745,6 @@ const styles = StyleSheet.create({
   },
 
   primaryButtonText: {
-    color: "#000000",
     fontSize: 14,
     fontWeight: "800",
     marginLeft: 10,
@@ -624,29 +755,24 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 18,
     borderBottomWidth: 1,
-    borderBottomColor: "#444444",
   },
 
   galleryText: {
-    color: "#AAAAAA",
     fontSize: 13,
     paddingBottom: 2,
   },
 
   loadingCard: {
     width: "100%",
-    backgroundColor: "#0A0A0A",
     padding: 20,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#222222",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
 
   loadingText: {
-    color: "#FFFFFF",
     marginLeft: 12,
     fontSize: 13,
   },
@@ -658,16 +784,13 @@ const styles = StyleSheet.create({
 
   card: {
     width: "100%",
-    backgroundColor: "#0A0A0A",
     borderWidth: 1,
-    borderColor: "#222222",
     borderRadius: 16,
     padding: 22,
     marginBottom: 14,
   },
 
   cardEyebrow: {
-    color: "#666666",
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 2,
@@ -675,7 +798,6 @@ const styles = StyleSheet.create({
   },
 
   cardTitle: {
-    color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
     letterSpacing: 1,
@@ -683,23 +805,19 @@ const styles = StyleSheet.create({
   },
 
   itemName: {
-    color: "#FFFFFF",
     fontSize: 22,
     fontWeight: "800",
     lineHeight: 29,
   },
 
   itemSubtext: {
-    color: "#888888",
     fontSize: 13,
     marginTop: 6,
   },
 
   valueCard: {
     width: "100%",
-    backgroundColor: "#0A0A0A",
     borderWidth: 1,
-    borderColor: "#333333",
     borderRadius: 16,
     padding: 24,
     alignItems: "center",
@@ -707,26 +825,22 @@ const styles = StyleSheet.create({
   },
 
   valueLabel: {
-    color: "#888888",
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 2,
   },
 
   valueMain: {
-    color: "#FFFFFF",
     fontSize: 46,
     fontWeight: "800",
     marginTop: 8,
   },
 
   valueCurrency: {
-    color: "#777777",
     fontSize: 18,
   },
 
   valueRange: {
-    color: "#666666",
     fontSize: 13,
     marginTop: 6,
   },
@@ -735,30 +849,25 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 64,
     borderWidth: 1,
-    borderColor: "#444444",
     borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 18,
-    backgroundColor: "#050505",
   },
 
   dollarSign: {
-    color: "#FFFFFF",
     fontSize: 26,
     fontWeight: "700",
   },
 
   priceInput: {
     flex: 1,
-    color: "#FFFFFF",
     fontSize: 26,
     fontWeight: "700",
     marginLeft: 8,
   },
 
   inputHint: {
-    color: "#666666",
     fontSize: 12,
     lineHeight: 18,
     marginTop: 10,
@@ -812,13 +921,11 @@ const styles = StyleSheet.create({
   },
 
   conditionText: {
-    color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "700",
   },
 
   conditionDescription: {
-    color: "#AAAAAA",
     fontSize: 13,
     lineHeight: 20,
     marginTop: 8,
@@ -826,9 +933,7 @@ const styles = StyleSheet.create({
 
   confidenceCard: {
     width: "100%",
-    backgroundColor: "#0A0A0A",
     borderWidth: 1,
-    borderColor: "#222222",
     borderRadius: 16,
     padding: 18,
     flexDirection: "row",
@@ -838,14 +943,12 @@ const styles = StyleSheet.create({
   },
 
   confidenceLabel: {
-    color: "#777777",
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.5,
   },
 
   confidenceValue: {
-    color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "800",
   },
@@ -857,12 +960,10 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 30,
     borderTopWidth: 1,
-    borderTopColor: "#222222",
   },
 
   disclaimerText: {
     flex: 1,
-    color: "#666666",
     fontSize: 11,
     lineHeight: 17,
     marginLeft: 10,
