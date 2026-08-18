@@ -43,6 +43,15 @@ interface AnalysisResult {
 
 type DealStatus = "GOOD" | "FAIR" | "BAD";
 
+type FeedbackRating = "ACCURATE" | "INACCURATE";
+
+type FeedbackIssue =
+  | "IDENTIFICATION"
+  | "BRAND_MODEL"
+  | "CONDITION"
+  | "VALUE"
+  | "OTHER";
+
 export default function BuyerAnalyzer() {
   const { colors, isDark } = useTheme();
 
@@ -52,6 +61,21 @@ export default function BuyerAnalyzer() {
   const [askingPrice, setAskingPrice] = useState("");
   const [dealStatus, setDealStatus] = useState<DealStatus | null>(null);
   const [priceDifference, setPriceDifference] = useState<number | null>(null);
+
+  // FEEDBACK STATE
+  const [feedbackRating, setFeedbackRating] = useState<FeedbackRating | null>(
+    null,
+  );
+
+  const [feedbackIssue, setFeedbackIssue] = useState<FeedbackIssue | null>(
+    null,
+  );
+
+  const [feedbackComment, setFeedbackComment] = useState("");
+
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
   const analyzeDeal = (priceText: string, analysis: AnalysisResult | null) => {
     if (!analysis?.estimatedValue) {
@@ -154,6 +178,12 @@ export default function BuyerAnalyzer() {
     setDealStatus(null);
     setPriceDifference(null);
 
+    // Reset feedback for new analysis
+    setFeedbackRating(null);
+    setFeedbackIssue(null);
+    setFeedbackComment("");
+    setFeedbackSubmitted(false);
+
     try {
       const { data, error } = await supabase.functions.invoke("analyze-item", {
         body: {
@@ -189,6 +219,109 @@ export default function BuyerAnalyzer() {
     }
   };
 
+  // ============================================================
+  // FEEDBACK
+  // ============================================================
+
+  const submitFeedback = async () => {
+    if (!result) {
+      return;
+    }
+
+    if (!feedbackRating) {
+      Alert.alert(
+        "Choose an option",
+        "Please tell us whether the analysis was accurate.",
+      );
+
+      return;
+    }
+
+    if (feedbackRating === "INACCURATE" && !feedbackIssue) {
+      Alert.alert(
+        "What was wrong?",
+        "Please select what part of the analysis was inaccurate.",
+      );
+
+      return;
+    }
+
+    setFeedbackSubmitting(true);
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        Alert.alert(
+          "Sign In Required",
+          "Please sign in before submitting feedback.",
+        );
+
+        return;
+      }
+
+      const { error } = await supabase.from("analysis_feedback").insert({
+        user_id: user.id,
+
+        rating: feedbackRating,
+
+        issue: feedbackRating === "INACCURATE" ? feedbackIssue : null,
+
+        comment: feedbackComment.trim() || null,
+
+        asking_price:
+          askingPrice && !Number.isNaN(Number(askingPrice))
+            ? Number(askingPrice)
+            : null,
+
+        deal_status: dealStatus,
+
+        analysis_result: result,
+
+        item_name: result.name || null,
+
+        brand: result.brand || null,
+
+        model: result.model || null,
+
+        estimated_min: result.estimatedValue?.min ?? null,
+
+        estimated_max: result.estimatedValue?.max ?? null,
+
+        estimated_average: result.estimatedValue?.average ?? null,
+
+        confidence: result.confidence ?? null,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setFeedbackSubmitted(true);
+
+      Alert.alert(
+        "Thank You!",
+        "Your feedback helps us improve Worthly's analysis accuracy.",
+      );
+    } catch (error: any) {
+      console.error("Feedback submission failed:", error);
+
+      Alert.alert(
+        "Feedback Failed",
+        error?.message || "We couldn't submit your feedback. Please try again.",
+      );
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  };
+
   const getDealTitle = () => {
     if (dealStatus === "GOOD") {
       return "GOOD DEAL";
@@ -211,6 +344,7 @@ export default function BuyerAnalyzer() {
     }
 
     const price = Number(askingPrice);
+
     const average = result.estimatedValue.average;
 
     const percentage = Math.abs(((price - average) / average) * 100);
@@ -236,13 +370,20 @@ export default function BuyerAnalyzer() {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.keyboardContainer, { backgroundColor: colors.background }]}
+      style={[
+        styles.keyboardContainer,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { backgroundColor: colors.background },
+          {
+            backgroundColor: colors.background,
+          },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -269,7 +410,12 @@ export default function BuyerAnalyzer() {
           </Text>
 
           <Text
-            style={[styles.headerSubtitle, { color: colors.secondaryText }]}
+            style={[
+              styles.headerSubtitle,
+              {
+                color: colors.secondaryText,
+              },
+            ]}
           >
             Know what you're buying.
           </Text>
@@ -317,7 +463,12 @@ export default function BuyerAnalyzer() {
               </Text>
 
               <Text
-                style={[styles.placeholderSub, { color: colors.secondaryText }]}
+                style={[
+                  styles.placeholderSub,
+                  {
+                    color: colors.secondaryText,
+                  },
+                ]}
               >
                 Worthly will estimate its value
               </Text>
@@ -359,10 +510,22 @@ export default function BuyerAnalyzer() {
         {/* GALLERY */}
 
         <TouchableOpacity
-          style={[styles.galleryButton, { borderBottomColor: colors.border }]}
+          style={[
+            styles.galleryButton,
+            {
+              borderBottomColor: colors.border,
+            },
+          ]}
           onPress={openGallery}
         >
-          <Text style={[styles.galleryText, { color: colors.secondaryText }]}>
+          <Text
+            style={[
+              styles.galleryText,
+              {
+                color: colors.secondaryText,
+              },
+            ]}
+          >
             Select from Camera Roll
           </Text>
         </TouchableOpacity>
@@ -403,7 +566,12 @@ export default function BuyerAnalyzer() {
               ]}
             >
               <Text
-                style={[styles.cardEyebrow, { color: colors.secondaryText }]}
+                style={[
+                  styles.cardEyebrow,
+                  {
+                    color: colors.secondaryText,
+                  },
+                ]}
               >
                 ITEM IDENTIFIED
               </Text>
@@ -413,7 +581,12 @@ export default function BuyerAnalyzer() {
               </Text>
 
               <Text
-                style={[styles.itemSubtext, { color: colors.secondaryText }]}
+                style={[
+                  styles.itemSubtext,
+                  {
+                    color: colors.secondaryText,
+                  },
+                ]}
               >
                 {result.brand || "Unknown Brand"}
                 {result.model ? ` • ${result.model}` : ""}
@@ -433,7 +606,12 @@ export default function BuyerAnalyzer() {
                 ]}
               >
                 <Text
-                  style={[styles.valueLabel, { color: colors.secondaryText }]}
+                  style={[
+                    styles.valueLabel,
+                    {
+                      color: colors.secondaryText,
+                    },
+                  ]}
                 >
                   ESTIMATED MARKET VALUE
                 </Text>
@@ -443,7 +621,9 @@ export default function BuyerAnalyzer() {
                   <Text
                     style={[
                       styles.valueCurrency,
-                      { color: colors.secondaryText },
+                      {
+                        color: colors.secondaryText,
+                      },
                     ]}
                   >
                     {" "}
@@ -452,7 +632,12 @@ export default function BuyerAnalyzer() {
                 </Text>
 
                 <Text
-                  style={[styles.valueRange, { color: colors.secondaryText }]}
+                  style={[
+                    styles.valueRange,
+                    {
+                      color: colors.secondaryText,
+                    },
+                  ]}
                 >
                   Typical range: ${result.estimatedValue.min} – $
                   {result.estimatedValue.max}
@@ -494,11 +679,23 @@ export default function BuyerAnalyzer() {
                   placeholder="0.00"
                   placeholderTextColor={colors.secondaryText}
                   keyboardType="decimal-pad"
-                  style={[styles.priceInput, { color: colors.text }]}
+                  style={[
+                    styles.priceInput,
+                    {
+                      color: colors.text,
+                    },
+                  ]}
                 />
               </View>
 
-              <Text style={[styles.inputHint, { color: colors.secondaryText }]}>
+              <Text
+                style={[
+                  styles.inputHint,
+                  {
+                    color: colors.secondaryText,
+                  },
+                ]}
+              >
                 Enter the seller's asking price to see if it's a good deal.
               </Text>
             </View>
@@ -555,7 +752,12 @@ export default function BuyerAnalyzer() {
               ]}
             >
               <Text
-                style={[styles.cardEyebrow, { color: colors.secondaryText }]}
+                style={[
+                  styles.cardEyebrow,
+                  {
+                    color: colors.secondaryText,
+                  },
+                ]}
               >
                 ITEM CONDITION
               </Text>
@@ -568,7 +770,9 @@ export default function BuyerAnalyzer() {
                 <Text
                   style={[
                     styles.conditionDescription,
-                    { color: colors.secondaryText },
+                    {
+                      color: colors.secondaryText,
+                    },
                   ]}
                 >
                   {result.conditionDescription}
@@ -591,13 +795,22 @@ export default function BuyerAnalyzer() {
                 <Text
                   style={[
                     styles.confidenceLabel,
-                    { color: colors.secondaryText },
+                    {
+                      color: colors.secondaryText,
+                    },
                   ]}
                 >
                   AI CONFIDENCE
                 </Text>
 
-                <Text style={[styles.confidenceValue, { color: colors.text }]}>
+                <Text
+                  style={[
+                    styles.confidenceValue,
+                    {
+                      color: colors.text,
+                    },
+                  ]}
+                >
                   {Math.round(
                     result.confidence <= 1
                       ? result.confidence * 100
@@ -608,10 +821,300 @@ export default function BuyerAnalyzer() {
               </View>
             )}
 
+            {/* ====================================================
+                ANALYSIS FEEDBACK
+            ==================================================== */}
+
+            <View
+              style={[
+                styles.feedbackCard,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.feedbackEyebrow,
+                  {
+                    color: colors.secondaryText,
+                  },
+                ]}
+              >
+                HELP IMPROVE WORTHLY
+              </Text>
+
+              <Text
+                style={[
+                  styles.feedbackTitle,
+                  {
+                    color: colors.text,
+                  },
+                ]}
+              >
+                Was this analysis accurate?
+              </Text>
+
+              <Text
+                style={[
+                  styles.feedbackSubtitle,
+                  {
+                    color: colors.secondaryText,
+                  },
+                ]}
+              >
+                Your feedback helps us improve Worthly's AI.
+              </Text>
+
+              {feedbackSubmitted ? (
+                <View style={styles.feedbackComplete}>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={28}
+                    color={colors.primary}
+                  />
+
+                  <Text
+                    style={[
+                      styles.feedbackCompleteText,
+                      {
+                        color: colors.text,
+                      },
+                    ]}
+                  >
+                    Thanks for helping improve Worthly!
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {/* ACCURATE / INACCURATE */}
+
+                  <View style={styles.feedbackButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.feedbackButton,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor:
+                            feedbackRating === "ACCURATE"
+                              ? colors.primary
+                              : colors.border,
+                        },
+                      ]}
+                      onPress={() => {
+                        setFeedbackRating("ACCURATE");
+                        setFeedbackIssue(null);
+                      }}
+                    >
+                      <Ionicons
+                        name="thumbs-up-outline"
+                        size={24}
+                        color={
+                          feedbackRating === "ACCURATE"
+                            ? colors.primary
+                            : colors.text
+                        }
+                      />
+
+                      <Text
+                        style={[
+                          styles.feedbackButtonText,
+                          {
+                            color: colors.text,
+                          },
+                        ]}
+                      >
+                        Accurate
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.feedbackButton,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor:
+                            feedbackRating === "INACCURATE"
+                              ? "#D94A4A"
+                              : colors.border,
+                        },
+                      ]}
+                      onPress={() => setFeedbackRating("INACCURATE")}
+                    >
+                      <Ionicons
+                        name="thumbs-down-outline"
+                        size={24}
+                        color={
+                          feedbackRating === "INACCURATE"
+                            ? "#D94A4A"
+                            : colors.text
+                        }
+                      />
+
+                      <Text
+                        style={[
+                          styles.feedbackButtonText,
+                          {
+                            color: colors.text,
+                          },
+                        ]}
+                      >
+                        Not accurate
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* ISSUE SELECTION */}
+
+                  {feedbackRating === "INACCURATE" && (
+                    <View style={styles.issueContainer}>
+                      <Text
+                        style={[
+                          styles.issueLabel,
+                          {
+                            color: colors.text,
+                          },
+                        ]}
+                      >
+                        What was wrong?
+                      </Text>
+
+                      {(
+                        [
+                          ["IDENTIFICATION", "Item identification"],
+                          ["BRAND_MODEL", "Brand / model"],
+                          ["CONDITION", "Condition"],
+                          ["VALUE", "Estimated value"],
+                          ["OTHER", "Other"],
+                        ] as [FeedbackIssue, string][]
+                      ).map(([issue, label]) => (
+                        <TouchableOpacity
+                          key={issue}
+                          style={[
+                            styles.issueButton,
+                            {
+                              backgroundColor:
+                                feedbackIssue === issue
+                                  ? colors.surface
+                                  : "transparent",
+                              borderColor:
+                                feedbackIssue === issue
+                                  ? colors.primary
+                                  : colors.border,
+                            },
+                          ]}
+                          onPress={() => setFeedbackIssue(issue)}
+                        >
+                          <View
+                            style={[
+                              styles.radio,
+                              {
+                                borderColor:
+                                  feedbackIssue === issue
+                                    ? colors.primary
+                                    : colors.secondaryText,
+                              },
+                            ]}
+                          >
+                            {feedbackIssue === issue && (
+                              <View
+                                style={[
+                                  styles.radioInner,
+                                  {
+                                    backgroundColor: colors.primary,
+                                  },
+                                ]}
+                              />
+                            )}
+                          </View>
+
+                          <Text
+                            style={[
+                              styles.issueText,
+                              {
+                                color: colors.text,
+                              },
+                            ]}
+                          >
+                            {label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* COMMENT */}
+
+                  {feedbackRating && (
+                    <TextInput
+                      value={feedbackComment}
+                      onChangeText={setFeedbackComment}
+                      placeholder={
+                        feedbackRating === "INACCURATE"
+                          ? "Tell us what Worthly got wrong..."
+                          : "Anything else you'd like us to know? (optional)"
+                      }
+                      placeholderTextColor={colors.secondaryText}
+                      multiline
+                      numberOfLines={4}
+                      textAlignVertical="top"
+                      style={[
+                        styles.feedbackInput,
+                        {
+                          backgroundColor: colors.surface,
+                          borderColor: colors.border,
+                          color: colors.text,
+                        },
+                      ]}
+                    />
+                  )}
+
+                  {/* SUBMIT */}
+
+                  {feedbackRating && (
+                    <TouchableOpacity
+                      style={[
+                        styles.feedbackSubmit,
+                        {
+                          backgroundColor: colors.primary,
+                        },
+                      ]}
+                      onPress={submitFeedback}
+                      disabled={feedbackSubmitting}
+                    >
+                      {feedbackSubmitting ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={isDark ? "#000000" : "#FFFFFF"}
+                        />
+                      ) : (
+                        <Text
+                          style={[
+                            styles.feedbackSubmitText,
+                            {
+                              color: isDark ? "#000000" : "#FFFFFF",
+                            },
+                          ]}
+                        >
+                          SUBMIT FEEDBACK
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+            </View>
+
             {/* DISCLAIMER */}
 
             <View
-              style={[styles.disclaimerCard, { borderTopColor: colors.border }]}
+              style={[
+                styles.disclaimerCard,
+                {
+                  borderTopColor: colors.border,
+                },
+              ]}
             >
               <Ionicons
                 name="information-circle-outline"
@@ -620,7 +1123,12 @@ export default function BuyerAnalyzer() {
               />
 
               <Text
-                style={[styles.disclaimerText, { color: colors.secondaryText }]}
+                style={[
+                  styles.disclaimerText,
+                  {
+                    color: colors.secondaryText,
+                  },
+                ]}
               >
                 Worthly's valuation is an estimate based on the information
                 visible in the image. Actual prices can vary depending on
@@ -951,6 +1459,137 @@ const styles = StyleSheet.create({
   confidenceValue: {
     fontSize: 18,
     fontWeight: "800",
+  },
+
+  // ============================================================
+  // FEEDBACK STYLES
+  // ============================================================
+
+  feedbackCard: {
+    width: "100%",
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 22,
+    marginBottom: 14,
+  },
+
+  feedbackEyebrow: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 2,
+    marginBottom: 8,
+  },
+
+  feedbackTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+  },
+
+  feedbackSubtitle: {
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 6,
+    marginBottom: 18,
+  },
+
+  feedbackButtons: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  feedbackButton: {
+    flex: 1,
+    minHeight: 80,
+    borderWidth: 1,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  feedbackButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 7,
+  },
+
+  issueContainer: {
+    marginTop: 20,
+  },
+
+  issueLabel: {
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 10,
+  },
+
+  issueButton: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderRadius: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
+
+  radio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+
+  issueText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  feedbackInput: {
+    width: "100%",
+    minHeight: 100,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 13,
+    marginTop: 12,
+  },
+
+  feedbackSubmit: {
+    width: "100%",
+    minHeight: 52,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 12,
+  },
+
+  feedbackSubmitText: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+
+  feedbackComplete: {
+    minHeight: 70,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  feedbackCompleteText: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 8,
+    textAlign: "center",
   },
 
   disclaimerCard: {
